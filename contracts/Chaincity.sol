@@ -4,9 +4,9 @@
 
 /* 
 TESTING VALUES
-    [["0x4B20993Bc481177ec7E8f571ceCaE8A9e22C02db", 1500, 100], 
-["0x78731D3Ca6b7E34aC0F824c42a7cC18A495cabaB", 1500, 100], 
-    ["0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2", 1500, 50]]
+    ["0x4B20993Bc481177ec7E8f571ceCaE8A9e22C02db", 
+    "0x78731D3Ca6b7E34aC0F824c42a7cC18A495cabaB", 
+    "0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2"]
 
 */
 pragma solidity ^0.8.0;
@@ -35,10 +35,12 @@ contract Chaincity is ReentrancyGuard, Ownable {
         uint256 totalPlayers;
         uint256 totalStake;
         mapping(uint256 => Player) players;
+        mapping(address => bool) playerExists;
         uint256 startingCash;
         address gameOwner;
         uint256 cash;
         uint256 city;
+        bool playing;
     }
 
     struct City {
@@ -46,105 +48,186 @@ contract Chaincity is ReentrancyGuard, Ownable {
         address cityOwner;
         uint256 totalGames;
         uint256 fee;
+        uint256 minStake;
     }
 
     Game[] private _games;
     City[] private _cities;
 
-    constructor(address payable _wallet, ERC20 _token) {
+    constructor(address payable _wallet, ERC20 _token) payable {
         require(_wallet != address(0));
 
         wallet = _wallet;
         token = _token;
     }
 
-    function createCity() public {
+    /**
+   * @dev fallback function ***DO NOT OVERRIDE***
+   */
+  fallback () external payable {
+
+  }
+
+  /**
+   * @dev recieve function ***DO NOT OVERRIDE***
+   */
+  receive () external payable {}
+
+
+    function createCity(uint256 _minStake, uint256 _fee) public {
         _cities.push(
             City({
                 id: _totalCities + 1,
                 cityOwner: msg.sender,
                 totalGames: 0,
-                fee: 0
+                fee: _fee,
+                minStake: _minStake
             })
         );
 
         _totalCities++;
     }
 
+     function getCity(uint256 _cityId) public view returns(City memory) {
+         uint256 cityIndex = cityIndexFromId(_cityId);
+        return _cities[cityIndex];
+    }
+
+
     // function payCityFee() public {}
 
     function setCityFee(uint256 _cityId, uint256 _amount) public {
         require(true, "City does not exist"); // city exists
-        uint256 cityIndex = cityIndexFromId(_cityId); // is city owner
+        uint256 cityIndex = cityIndexFromId(_cityId); 
 
         require(
             msg.sender == _cities[cityIndex].cityOwner,
             "Sender is not city owner"
-        );
+        ); // is city owner
         _cities[cityIndex].fee = _amount;
     }
 
     // function sellCity(address _buyer) public {}
 
-    function totlaCities() public view returns (uint256) {
+    function totalCities() public view returns (uint256) {
         return _totalCities;
+    }
+
+
+
+    function minStake(uint256 _cityIndex) public view returns (uint256) {
+        return _cities[_cityIndex].minStake;
+    }
+    
+
+    /**
+     * GAME PLAY
+     */
+    
+
+
+
+
+
+
+    function createGame(uint256 _cityId, uint256 _startingCash) public returns (uint256) {
+        uint256 cityIndex = cityIndexFromId(_cityId);
+        address gameOwner = _cities[cityIndex].cityOwner;
+       
+        _games.push();
+        Game storage game = _games[_totalGames];
+        game.id = _totalGames + 1;
+        game.totalPlayers = 0;
+        game.totalStake = 0;
+        game.startingCash = _startingCash;
+        game.gameOwner = gameOwner;
+        game.cash = 0;
+        game.city = _cityId;
+        game.totalStake = 0;
+        game.playing = false;
+
+        _totalGames++;
+
+        return _totalGames;
     }
 
     function totalGames() public view returns (uint256) {
         return _totalGames;
     }
 
-    /**
-     * GAME PLAY
-     */
+    
+    function getGame(uint256 _gameId) external view returns (
+        uint256 id, uint256 totalPlayers, 
+        uint256 totalStake, uint256 startingCash, 
+        address gameOwner, uint256 city, 
+        uint256 cash, bool playing ) {
 
-    function startGame(
-        uint256 _cityId,
-        address[] memory _players,
-        uint256 _startingCash
-    ) public payable returns (uint256) {
-        uint256 totalPlayers = _players.length;
-        uint256 totalStake = 0;
-        uint256 cityIndex = cityIndexFromId(_cityId);
-        address gameOwner = _cities[cityIndex].cityOwner;
-       
-        _games.push();
-        Game storage game = _games[_totalGames];
-
-        game.id = _totalGames + 1;
-        game.totalPlayers = totalPlayers;
-        game.totalStake = totalStake;
-        game.startingCash = _startingCash;
-        game.gameOwner = gameOwner;
-        game.cash = 0;
-        game.city = _cityId;
-
-        for (uint256 i = 0; i < totalPlayers; i++) {
-            game.players[i] = Player({
-                addr: _players[i],
-                stake: msg.value,
-                cash: _startingCash
-            });
- 
-            totalStake += msg.value;
-
-            if (_players[i] != wallet) {
-                _stake(_players[i]);
-            }
-        }
-
-        game.totalStake = totalStake;
-        _totalGames++;
-
-        // _games.push(game);
-
-        return _totalGames;
+        Game storage game = _games[_gameId - 1];
+        id = game.id;
+        totalPlayers = game.totalPlayers;
+        startingCash = game.startingCash;
+        gameOwner = game.gameOwner;
+        cash = game.cash;
+        city = game.city;
+        totalStake = game.totalStake;
+        playing = game.playing;
     }
 
-    function endGame(uint256 _gameId) public {
-        _cashoutAll(_gameId);
 
-        _deleteGame(_gameId);
+    function addPlayer(uint256 _cityId, uint256 _gameId) public payable {
+        uint256 cityIndex = cityIndexFromId(_cityId);
+        uint256 gameIndex = gameIndexFromId(_gameId);
+        Game storage game = _games[gameIndex];
+        
+        require(game.playing == false, "game already started");
+        require(game.playerExists[msg.sender] == false, "player already exists");
+        require(msg.value >= _cities[cityIndex].minStake, "not enough stake");
+
+        // Add player to the game
+        uint256 totalPlayers = game.totalPlayers;
+        game.players[totalPlayers + 1] = Player({
+            addr: msg.sender,
+            stake: msg.value,
+            cash: game.startingCash
+        });
+        game.playerExists[msg.sender] = true;
+        game.totalPlayers++;
+        game.totalStake += msg.value;
+
+        // Transfer tokens from player to the contract
+        // require(token.transferFrom(msg.sender, address(this), msg.value), "transfer failed");
+
+        // Stake tokens
+        if (payable(msg.sender) != wallet) {
+            _stake();
+        }
+
+        game.cash += msg.value;
+        
+    }
+
+
+    function _stake() private {
+        uint256 weiAmount = msg.value;
+        require(msg.sender != address(0), "_beneficiary is not an address");
+        require(weiAmount >= 0, "_weiAmount is less than or 0");
+        wallet.transfer(msg.value);
+        // payable(msg.sender).transfer(bonus);
+    }
+
+    function getPlayers( uint256 _gameId) public view returns (Player[] memory)  {
+        // require(cityExists(cityId), "City does not exist");
+        // require(gameExists(_gameId), "Game does not exist");
+        // require(isPlaying(_gameId), "Game is not playing");
+
+        uint256 gameIndex = gameIndexFromId(_gameId);
+
+        Player[] memory players_ = new Player[](_games[gameIndex].totalPlayers);
+        for (uint256 i = 1; i <= _games[gameIndex].totalPlayers; i++) {
+           players_[i-1] = _games[gameIndex].players[i];
+        }
+
+        return players_;
     }
 
     function payPlayer(
@@ -159,7 +242,7 @@ contract Chaincity is ReentrancyGuard, Ownable {
         uint256 gameIndex = gameIndexFromId(_gameId);
         uint256 indexOfTo;
         uint256 indexOfFrom;
-        for (uint256 i = 0; i < _games[gameIndex].totalPlayers; i++) {
+        for (uint256 i = 1; i <= _games[gameIndex].totalPlayers; i++) {
             address playerAddr = _games[gameIndex].players[i].addr;
             if (playerAddr == _to) {
                 indexOfTo = i;
@@ -169,19 +252,50 @@ contract Chaincity is ReentrancyGuard, Ownable {
             }
         }
 
-        if (_games[gameIndex].gameOwner == _to) {
+        // if (_games[gameIndex].gameOwner == _to) { // game owner is recieving
+        //     _games[gameIndex].players[indexOfFrom].cash -= _cash;
+        //     _games[gameIndex].cash += _cash;
+        // } else if (_games[gameIndex].gameOwner == _from) { // game owner is sending
+        //     _games[gameIndex].cash -= _cash;
+        //     _games[gameIndex].players[indexOfTo].cash += _cash;
+        // } else {
             _games[gameIndex].players[indexOfFrom].cash -= _cash;
-            _games[gameIndex].cash += _cash;
-        } else if (_games[gameIndex].gameOwner == _from) {
-            _games[gameIndex].cash -= _cash;
             _games[gameIndex].players[indexOfTo].cash += _cash;
-        } else {
-            _games[gameIndex].players[indexOfFrom].cash -= _cash;
-            _games[gameIndex].players[indexOfTo].cash += _cash;
-        }
+        // }
+    }
+    function startGame(
+        uint256 _gameId
+    ) public  {
+        uint256 gameIndex = gameIndexFromId(_gameId);
+        
+        Game storage game = _games[gameIndex];
+        require(game.playing == false, "Game already started");
+
+        uint256 totalPlayers = game.totalPlayers;
+        require(totalPlayers > 0, "No players in game");
+        require(totalPlayers >= 2, "Not enough players (>=2)");
+
+        uint256 totalStake = game.totalStake;
+    require(totalStake > 0, "No stake in game");
+
+        // for (uint256 i = 1; i <= totalPlayers; i++) {
+        //     Player storage player = game.players[i];
+        //     // token.transferFrom(player.addr, address(this), player.stake);
+        // }
+
+        game.playing = true;
     }
 
+    function endGame(uint256 gameIndex) public {
+        _cashoutAll(gameIndex);
+
+        _deleteGame(gameIndex);
+    }
+
+
     function _cashoutAll(uint256 _gameId) internal {
+        // games has ended
+        // 
         uint256 gameIndex = gameIndexFromId(_gameId);
         for (uint256 i = 0; i < _games[gameIndex].totalPlayers; i++) {
             address playerAddr = _games[gameIndex].players[i].addr;
@@ -226,19 +340,8 @@ contract Chaincity is ReentrancyGuard, Ownable {
         revert("City ID not found");
     }
 
-    // function getPlayersInGame(uint256 _gameId) public returns (Player[] memory) {
-    //     uint256 gameIndex = gameIndexFromId(_gameId);
-    //     Player[] storage players;
-    //     for (uint256 i = 0; i < _games[gameIndex].totalPlayers; i++) {
-    //         players.push(_games[gameIndex].players[i]);
-    //     }
-    //     return players;
-    // }
-
-    function getCity(uint256 _cityIndex) public view returns(City memory) {
-        return _cities[_cityIndex];
-    }
-
+   
+   
     function _calculatePlayerReturn(
         uint256 _playerStake,
         uint256 _playerCash,
@@ -260,14 +363,7 @@ contract Chaincity is ReentrancyGuard, Ownable {
         _totalGames--;
     }
 
-    function _stake(address _player) private {
-         uint256 weiAmount = msg.value;
-        _preValidatePurchase(_player, weiAmount);
-
-        
-
-        _forwardFunds();
-    }
+    
 
     /**
      * @dev Validation of an incoming purchase. Use require statements to revert state when conditions are not met. Use super to concatenate validations.
