@@ -227,7 +227,7 @@ contract Chaincity is Cities, ReentrancyGuard {
    
     function endGame(
         uint256 _gameId,
-        address[] memory _winAddrOrder,
+        uint256[] memory _winAddrOrder,
         uint256 _winCash,
         string memory _inputAuth
     ) public
@@ -242,7 +242,8 @@ contract Chaincity is Cities, ReentrancyGuard {
         );
 
         for (uint i = 0; i < _winAddrOrder.length; i++) {
-            require(game.playerExists[_winAddrOrder[i]], "Player does not exist!");
+            require(game.playerExists[game.players[_winAddrOrder[i]].addr], 
+            "Player does not exist!");
         }
 
 
@@ -267,14 +268,14 @@ contract Chaincity is Cities, ReentrancyGuard {
 
     function _cashoutAll(
         uint256 _gameId, 
-        uint256 _winCash, 
-        address[] memory _winAddrOrder) internal 
+        uint256 _winCash,
+        uint256[] memory _winAddrOrder) internal 
         gameExists(_gameId) {
             
             Game storage game = _games[_gameId - 1];
 
             uint256 totalCash = (game.startingCash * game.totalPlayers);
-            uint256 winnerStake = game.players[0].stake;
+            uint256 winnerStake = game.players[_winAddrOrder[0]].stake;
             uint256 winnerPercentStake = winnerStake / game.totalStake;
             uint256 winnerCashGain = _winCash - game.startingCash;
             uint256 WCG2Stake = winnerCashGain * winnerStake / game.startingCash;
@@ -284,7 +285,10 @@ contract Chaincity is Cities, ReentrancyGuard {
                 uint256 winnerStakeReturn = (WCG2Stake + winnerStake);
                 uint256 stakeLeft = game.totalStake - (WCG2Stake + winnerStake);
                 uint256 winnerTokenReturn = stakeLeft * winnerPercentStake;
-                _payout(msg.sender, winnerStakeReturn, winnerTokenReturn );
+                if (game.players[_winAddrOrder[0]].addr != wallet) {
+                    _payout(game.players[_winAddrOrder[0]].addr, winnerStakeReturn, winnerTokenReturn );
+                }
+                
 
                 for (uint256 i = 1; i < _winAddrOrder.length; i++) {
                     uint256 playerStake = game.players[i].stake;
@@ -292,7 +296,9 @@ contract Chaincity is Cities, ReentrancyGuard {
                     uint256 playerStakeReturn = (stakeLeft * playerPercentStake) / 2;
                     uint256 playerTokenReturn = playerStakeReturn * oneCashValue;
 
-                    _payout(msg.sender, playerStakeReturn, playerTokenReturn );
+                    if (game.players[i].addr != wallet) {
+                    _payout(game.players[i].addr, playerStakeReturn, playerTokenReturn );
+                }
                 }
 
                 
@@ -301,14 +307,18 @@ contract Chaincity is Cities, ReentrancyGuard {
                 uint256 stakeLeft = (WCG2Stake + winnerStake) - winnerStakeReturn;
 
                 uint256 winnerTokenReturn = (stakeLeft * winnerPercentStake) * oneCashValue;
-                _payout(msg.sender, winnerStakeReturn, winnerTokenReturn );
+                if (game.players[_winAddrOrder[0]].addr != wallet) {
+                    _payout(game.players[_winAddrOrder[0]].addr, winnerStakeReturn, winnerTokenReturn );
+                }
 
                 for (uint256 i = 1; i < _winAddrOrder.length; i++) {
                     uint256 playerStake = game.players[i].stake;
                     uint256 playerPercentStake = playerStake / game.totalStake;
                     uint256 playerTokenReturn = (stakeLeft * playerPercentStake) * oneCashValue;
 
-                    _payout(msg.sender, 0, playerTokenReturn );
+                    if (game.players[i].addr != wallet) {
+                    _payout(game.players[i].addr, 0, playerTokenReturn );
+                }
                 }
 
             }

@@ -58,7 +58,6 @@ contract Cities is Ownable {
         _totalCities++;
     }
 
-
     function getCity(uint256 _cityId) public view 
         cityExists(_cityId) returns(City memory) {
         return _cities[_cityId - 1];

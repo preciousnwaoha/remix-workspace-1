@@ -12,11 +12,10 @@ TESTING VALUES
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./CitiesAlt.sol";
 
-contract Chaincity is ReentrancyGuard, Ownable {
+contract Chaincity is Cities {
     // The token being sold
     ERC20 public token;
     // Address where funds are collected
@@ -133,6 +132,28 @@ contract Chaincity is ReentrancyGuard, Ownable {
     }
 
     
+    function getGame(uint256 _gameId, string memory _inputAuth)
+        external
+        view
+        gameExists(_gameId)
+        isAuth(_inputAuth) 
+        returns (
+        uint256 id, uint256 totalPlayers, 
+        uint256 totalStake, uint256 startingCash, 
+        address gameOwner, uint256 city, 
+        uint256 cash, bool playing ) {
+
+        Game storage game = _games[_gameId - 1];
+        id = game.id;
+        totalPlayers = game.totalPlayers;
+        startingCash = game.startingCash;
+        gameOwner = game.gameOwner;
+        cash = game.cash;
+        city = game.city;
+        totalStake = game.totalStake;
+        playing = game.playing;
+    }
+
 
     function addPlayer(uint256 _cityId, uint256 _gameId) public 
     payable
@@ -165,16 +186,6 @@ contract Chaincity is ReentrancyGuard, Ownable {
         game.cash += msg.value;
     }
 
-function _stake() private {
-        uint256 tokenAmount = msg.value;
-        require(tokenAmount >= 0, "_tokenAmount is less than or 0");
-
-        bool success = token.transfer(wallet, tokenAmount);
-
-        // Check if the transfer was successful
-        require(success, "Token transfer failed");
-    }
-
     function getPlayers(uint256 _gameId)
         public
         view
@@ -182,7 +193,7 @@ function _stake() private {
         gameStarted(_gameId)
         returns (Player[] memory)
     {
-        uint256 gameIndex = _gameId - 1;
+        uint256 gameIndex = gameIndexFromId(_gameId);
 
         Player[] memory players_ = new Player[](_games[gameIndex].totalPlayers);
         for (uint256 i = 1; i <= _games[gameIndex].totalPlayers; i++) {
@@ -237,9 +248,22 @@ function _stake() private {
     }
 
     
-    
+    function gameIndexFromId(uint256 _gameId)
+    public view
+    gameExists(_gameId) 
+    returns (uint256) {
+        return _gameId - 1;
+    }
 
+function _stake() private {
+        uint256 tokenAmount = msg.value;
+        require(tokenAmount >= 0, "_tokenAmount is less than or 0");
 
+        bool success = token.transfer(wallet, tokenAmount);
+
+        // Check if the transfer was successful
+        require(success, "Token transfer failed");
+    }
 
     /**
      * INTERNAL FUNCTIONS
@@ -298,7 +322,7 @@ function _stake() private {
 
     function _deleteGame(uint256 _gameId) internal {
         uint256 len = _totalGames;
-        uint256 gameIndex = _gameId - 1;
+        uint256 gameIndex = gameIndexFromId(_gameId);
         require(gameIndex < len, "Invalid game index");
 
         for (uint256 i = gameIndex; i < len - 1; i++) {
@@ -338,12 +362,7 @@ function _stake() private {
 }
 
 
-// function gameIndexFromId(uint256 _gameId)
-//     public view
-//     gameExists(_gameId) 
-//     returns (uint256) {
-//         return _gameId - 1;
-//     }
+
 
 // function play(uint256 _gameId) public {
     //     uint256 gameIndex = gameIndexFromId(_gameId);
