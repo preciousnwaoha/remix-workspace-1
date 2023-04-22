@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // @author: Developed by Pinqode.
-// @descpriton: City NFTs
+// @descpriton: City NFTs (v1)
 
 pragma solidity ^0.8.0;
 

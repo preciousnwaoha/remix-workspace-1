@@ -1,57 +1,45 @@
 // SPDX-License-Identifier: MIT
 // @author: Developed by Pinqode.
-// @descpriton: Chaincity game
+// @descpriton: Chaincity Game
 
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "./Cities.sol";
+import "./IChaincity.sol";
 
-contract Chaincity is Cities, ReentrancyGuard {
-    ERC20 public token; // game token
-    address payable public wallet; // Address where tokens(stakes) are stored
+contract Chaincity is IChaincity, Cities, ReentrancyGuard {
+    using SafeMath for uint256;
 
-    string private _auth; // app auth key
+    ERC20 public token; // Game token
+    address payable public wallet; // Address where tokens (stakes) are stored
+
+    string private _auth; // App auth key
 
     uint256 private _totalCities;
     uint256 private _totalGames;
 
-    struct Player {
-        address addr;
-        uint256 stake;
-    }
-
-    struct Game {
-        uint256 id;
-        uint256 totalPlayers;
-        uint256 totalStake;
-        mapping(uint256 => Player) players;
-        mapping(address => bool) playerExists;
-        uint256 startingCash;
-        address gameOwner;
-        uint256 cash;
-        uint256 city;
-        bool playing;
-    }
+    
 
     Game[] private _games;
 
     constructor(address payable _wallet, ERC20 _token) payable {
-        require(_wallet != address(0));
+        require(_wallet != address(0), "Wallet address cannot be zero address");
 
         wallet = _wallet;
         token = _token;
     }
 
     /**
-     * @dev fallback function ***DO NOT OVERRIDE***
+     * @dev Fallback function ***DO NOT OVERRIDE***
      */
     fallback() external payable {}
 
     /**
-     * @dev recieve function ***DO NOT OVERRIDE***
+     * @dev Receive function ***DO NOT OVERRIDE***
      */
     receive() external payable {}
 
@@ -69,40 +57,44 @@ contract Chaincity is Cities, ReentrancyGuard {
         _;
     }
 
+    // Modifier to check if the game exists
     modifier gameExists(uint256 _gameId) {
         require(_gameId > 0, "Game ID not valid!");
         require(_gameId <= _games.length, "Game ID not valid!");
         _;
     }
 
+    // Modifier to check if the game has started
     modifier gameStarted(uint256 _gameId) {
-        require(_games[_gameId - 1].playing == true, "game not started");
+        require(_games[_gameId - 1].playing == true, "Game not started");
         _;
     }
 
+    // Modifier to check if the game has not started
     modifier gameNotStarted(uint256 _gameId) {
-        require(_games[_gameId - 1].playing != true, "game already started");
+        require(_games[_gameId - 1].playing != true, "Game already started");
         _;
     }
 
-
-    function getAuth() public view onlyOwner returns (string memory) {
+    // Getter function to retrieve the auth key (only accessible by contract owner)
+    function getAuth() public view override onlyOwner returns (string memory) {
         return _auth;
     }
 
-    function updateAuth(string memory _inputAuth) public onlyOwner {
+    // Function to update the auth key (only accessible by contract owner)
+    function updateAuth(string memory _inputAuth) public override onlyOwner {
         _auth = _inputAuth;
     }
 
+    // Function to create a new game
     function createGame(
         uint256 _cityId,
         uint256 _startingCash,
         string memory _inputAuth
-    ) public cityExists(_cityId) isAuth(_inputAuth) returns (uint256) {
+        ) public override cityExists(_cityId) isAuth(_inputAuth) returns (uint256) {
         require(_startingCash > 0, "Starting Cash too low");
         uint256 cityIndex = cityIndexFromId(_cityId);
         address gameOwner = _cities[cityIndex].cityOwner;
-
         _games.push();
         Game storage game = _games[_totalGames];
         game.id = _totalGames + 1;
@@ -117,16 +109,22 @@ contract Chaincity is Cities, ReentrancyGuard {
 
         _totalGames++;
 
+        // Emit the GameCreated event
+        emit GameCreated(_totalGames, _cityId, gameOwner);
+
         return _totalGames;
     }
 
-    function totalGames() public view returns (uint256) {
+    // Getter function to retrieve the total number of games
+    function totalGames( string memory _inputAuth) public view override isAuth(_inputAuth) returns (uint256) {
         return _totalGames;
     }
 
+    // Getter function to retrieve information about a specific game
     function getGame(uint256 _gameId, string memory _inputAuth)
         external
         view
+        override
         gameExists(_gameId)
         isAuth(_inputAuth)
         returns (
@@ -151,16 +149,24 @@ contract Chaincity is Cities, ReentrancyGuard {
         playing = game.playing;
     }
 
-    function gameIndexFromId(uint256 _gameId)
-    public view
-    gameExists(_gameId) 
-    returns (uint256) {
+    // Function to get the game index from the game ID
+    function gameIndexFromId(uint256 _gameId, string memory _inputAuth)
+        public
+        view
+        override
+        isAuth(_inputAuth)
+        gameExists(_gameId)
+        returns (uint256)
+    {
         return _gameId - 1;
     }
 
-    function addPlayer(uint256 _cityId, uint256 _gameId)
+    // Function to add a player to a game
+    function addPlayer(uint256 _cityId, uint256 _gameId, string memory _inputAuth)
         public
         payable
+        override
+        isAuth(_inputAuth)
         cityExists(_cityId)
         gameExists(_gameId)
         gameNotStarted(_gameId)
@@ -169,8 +175,11 @@ contract Chaincity is Cities, ReentrancyGuard {
         uint256 gameIndex = _gameId - 1;
         Game storage game = _games[gameIndex];
 
-        require(game.playerExists[msg.sender] == false, "player already exists");
-        require(msg.value >= _cities[cityIndex].minStake, "not enough stake");
+        require(
+            game.playerExists[msg.sender] == false,
+            "Player already exists"
+        );
+        require(msg.value >= _cities[cityIndex].minStake, "Not enough stake");
 
         // Add player to the game
         uint256 totalPlayers = game.totalPlayers;
@@ -188,18 +197,23 @@ contract Chaincity is Cities, ReentrancyGuard {
         }
 
         game.cash += msg.value;
+
+        // Emit the PlayerJoined event
+        emit PlayerJoined(_gameId, msg.sender, msg.value);
     }
 
-    function getPlayers(uint256 _gameId)
-        public
-        view
-        gameExists(_gameId)
-        gameStarted(_gameId)
-        returns (Player[] memory)
+    // Getter function to retrieve the list of players in a game
+    function getPlayers(uint256 _gameId, string memory _inputAuth)
+    public
+    view
+    override
+    isAuth(_inputAuth)
+    gameExists(_gameId)
+    gameStarted(_gameId)
+    returns (Player[] memory)
     {
-        uint256 gameIndex = gameIndexFromId(_gameId);
-
-        Player[] memory players_ = new Player[](_games[gameIndex].totalPlayers);
+        uint256 gameIndex = _gameId - 1;
+         Player[] memory players_ = new Player[](_games[gameIndex].totalPlayers);
         for (uint256 i = 1; i <= _games[gameIndex].totalPlayers; i++) {
             players_[i - 1] = _games[gameIndex].players[i];
         }
@@ -207,8 +221,11 @@ contract Chaincity is Cities, ReentrancyGuard {
         return players_;
     }
 
-    function startGame(uint256 _gameId)
+    // Function to start a game
+    function startGame(uint256 _gameId, string memory _inputAuth)
         public
+        override
+        isAuth(_inputAuth)
         gameExists(_gameId)
         gameNotStarted(_gameId)
     {
@@ -222,113 +239,188 @@ contract Chaincity is Cities, ReentrancyGuard {
         require(totalStake > 0, "No stake in game");
 
         game.playing = true;
+
+        // Emit the GameStarted event
+        emit GameStarted(_gameId);
     }
 
-   
+    // Function to end a game and distribute winnings to players
     function endGame(
         uint256 _gameId,
         uint256[] memory _winAddrOrder,
         uint256 _winCash,
         string memory _inputAuth
-    ) public
-        isAuth(_inputAuth)
-        gameExists(_gameId) 
-        gameStarted(_gameId) {
+    ) public payable override isAuth(_inputAuth) gameExists(_gameId) gameStarted(_gameId) {
         uint256 gameIndex = _gameId - 1;
         Game storage game = _games[gameIndex];
         require(
             _winAddrOrder.length == game.totalPlayers,
-            "Invalid No of Players Cash"
+            "Invalid number of players' cash"
         );
 
-        for (uint i = 0; i < _winAddrOrder.length; i++) {
-            require(game.playerExists[game.players[_winAddrOrder[i]].addr], 
-            "Player does not exist!");
+        for (uint256 i = 0; i < _winAddrOrder.length; i++) {
+            require(
+                game.playerExists[game.players[_winAddrOrder[i]].addr],
+                "Player does not exist!"
+            );
         }
 
+        uint256 winIdx = _winAddrOrder[0];
+        require(game.players[winIdx].addr == msg.sender, "Ender is not winner!");
 
         _cashoutAll(gameIndex, _winCash, _winAddrOrder);
 
         _deleteGame(gameIndex);
+
+        // Emit the GameEnded event
+        emit GameEnded(_gameId);
     }
 
+    // Private function to handle staking of tokens
     function _stake() private {
-        uint256 tokenAmount = msg.value;
-        require(tokenAmount >= 0, "_tokenAmount is less than or 0");
+        require(msg.value >= 0, "msg.value is less than or 0");
 
-        bool success = token.transfer(wallet, tokenAmount);
+        payable(address(this)).transfer(msg.value);
+    }
 
-        // Check if the transfer was successful
-        require(success, "Token transfer failed");
+    // Function to check the contract's Ether balance
+    function getBalance() external view override returns (uint256) {
+        return address(this).balance;
     }
 
     /**
-     * INTERNAL FUNCTIONS
-     */
+    * INTERNAL FUNCTIONS
+    */
 
+    // Function to calculate and distribute winnings to all players
     function _cashoutAll(
-        uint256 _gameId, 
+        uint256 _gameIndex,
         uint256 _winCash,
-        uint256[] memory _winAddrOrder) internal 
-        gameExists(_gameId) {
+        uint256[] memory _winAddrOrder
+    ) private {
+        Game storage game = _games[_gameIndex - 1];
+
+        (
+            uint256 winnerStakeReturn,
+            uint256 winnerTokenReturn,
+            uint256 stakeLeft
+        ) = _calculateWinnerPayout(game, _winCash, _winAddrOrder[0]);
+
+        // uint256 anyValueLeft = stakeLeft;
+
+        // if (game.players[_winAddrOrder[0]].addr != wallet) {
+            _payout(
+                game.players[_winAddrOrder[0]].addr,
+                winnerStakeReturn,
+                winnerTokenReturn
+            );
+        // }
+
+        for (uint256 i = 1; i < _winAddrOrder.length; i++) {
+            uint256 idx = _winAddrOrder[i];
+            uint256 playerStake = game.players[idx].stake;
+            uint256 playerPercentStake = playerStake.div(game.totalStake);
+            uint256 playerStakeReturn = stakeLeft.mul(playerPercentStake).div(
+            2
+            );
+            uint256 playerTokenReturn = playerStakeReturn
+            .mul(game.startingCash)
+            .mul(game.totalPlayers)
+            .div(game.totalStake);
+
             
-            Game storage game = _games[_gameId - 1];
+            // if (game.players[idx].addr != wallet) {
+                _payout(
+                    game.players[idx].addr,
+                    playerStakeReturn,
+                    playerTokenReturn
+                );
+            // }
 
-            uint256 totalCash = (game.startingCash * game.totalPlayers);
-            uint256 winnerStake = game.players[_winAddrOrder[0]].stake;
-            uint256 winnerPercentStake = winnerStake / game.totalStake;
-            uint256 winnerCashGain = _winCash - game.startingCash;
-            uint256 WCG2Stake = winnerCashGain * winnerStake / game.startingCash;
-            uint256 oneCashValue = (totalCash / game.totalStake);
+            // anyValueLeft -= playerStakeReturn;
 
-            if ((WCG2Stake + winnerStake) <= game.totalStake) {
-                uint256 winnerStakeReturn = (WCG2Stake + winnerStake);
-                uint256 stakeLeft = game.totalStake - (WCG2Stake + winnerStake);
-                uint256 winnerTokenReturn = stakeLeft * winnerPercentStake;
-                if (game.players[_winAddrOrder[0]].addr != wallet) {
-                    _payout(game.players[_winAddrOrder[0]].addr, winnerStakeReturn, winnerTokenReturn );
-                }
-                
+        }
 
-                for (uint256 i = 1; i < _winAddrOrder.length; i++) {
-                    uint256 playerStake = game.players[i].stake;
-                    uint256 playerPercentStake = playerStake / game.totalStake;
-                    uint256 playerStakeReturn = (stakeLeft * playerPercentStake) / 2;
-                    uint256 playerTokenReturn = playerStakeReturn * oneCashValue;
+        // if (anyValueLeft > 0) {
+        //     // Check that the contract has enough Ether to perform the transfer
+        //     require(address(this).balance >= anyValueLeft, "Insufficient balance");
 
-                    if (game.players[i].addr != wallet) {
-                    _payout(game.players[i].addr, playerStakeReturn, playerTokenReturn );
-                }
-                }
-
-                
-            } else {
-                uint256 winnerStakeReturn = game.totalStake;
-                uint256 stakeLeft = (WCG2Stake + winnerStake) - winnerStakeReturn;
-
-                uint256 winnerTokenReturn = (stakeLeft * winnerPercentStake) * oneCashValue;
-                if (game.players[_winAddrOrder[0]].addr != wallet) {
-                    _payout(game.players[_winAddrOrder[0]].addr, winnerStakeReturn, winnerTokenReturn );
-                }
-
-                for (uint256 i = 1; i < _winAddrOrder.length; i++) {
-                    uint256 playerStake = game.players[i].stake;
-                    uint256 playerPercentStake = playerStake / game.totalStake;
-                    uint256 playerTokenReturn = (stakeLeft * playerPercentStake) * oneCashValue;
-
-                    if (game.players[i].addr != wallet) {
-                    _payout(game.players[i].addr, 0, playerTokenReturn );
-                }
-                }
-
-            }
-
+        //         wallet.transfer(anyValueLeft);
+        //     }
     }
 
+    // Function to calculate the payout for the winner
+    function _calculateWinnerPayout(
+        Game storage game,
+        uint256 _winCash,
+        uint256 winnerIndex
+    )
+        internal
+        view
+        returns (
+            uint256 winnerStakeReturn,
+            uint256 winnerTokenReturn,
+            uint256 stakeLeft
+        )
+    {
+        uint256 winnerStake = game.players[winnerIndex].stake;
+        uint256 winnerPercentStake = winnerStake.div(game.totalStake);
+        uint256 winnerCashGain = _winCash.sub(game.startingCash);
+        uint256 WCG2Stake = winnerCashGain.mul(winnerStake).div(
+            game.startingCash
+        );
+        uint256 oneCashValue = game.startingCash.mul(game.totalPlayers).div(
+            game.totalStake
+        );
 
+        if (WCG2Stake.add(winnerStake) <= game.totalStake) {
+            winnerStakeReturn = WCG2Stake.add(winnerStake);
+            stakeLeft = game.totalStake.sub(winnerStakeReturn);
+        } else {
+            winnerStakeReturn = game.totalStake;
+            stakeLeft = WCG2Stake.add(winnerStake).sub(winnerStakeReturn);
+        }
+
+        winnerTokenReturn = stakeLeft.mul(winnerPercentStake).mul(oneCashValue);
+    }
+
+    
+    // Function to handle the payout to a player
+    function _payout(
+        address _playerAddr,
+        uint256 _stakeReturn,
+        uint256 _tokenReturn
+    ) private {
+        // Check if the smart contract has enough allowance to transfer tokens on behalf of the sender
+        require(
+            token.allowance(wallet, address(this)) >= _tokenReturn,
+            "Insufficient allowance"
+        );
+
+        // Transfer tokens from the sender to the recipient
+        require(
+            token.transferFrom(wallet, payable(_playerAddr), _tokenReturn),
+            "Token transfer failed"
+        );
+
+        if (_stakeReturn > 0) {
+
+            // Send the specified amount of Ether to the recipient address
+            // The call function returns a boolean value indicating success or failure
+            (bool success, ) = payable(_playerAddr).call{value: _stakeReturn}("");
+            require(success, "Failed to send Ether");
+        
+        }
+
+        // Emit the PlayerPayout event
+        emit PlayerPayout(_playerAddr, _stakeReturn, _tokenReturn);
+    }
+
+    
+    // Function to delete a game from the list of games
     function _deleteGame(uint256 _gameId) internal {
         uint256 len = _totalGames;
-        uint256 gameIndex = gameIndexFromId(_gameId);
+        uint256 gameIndex = _gameId - 1;
         require(gameIndex < len, "Invalid game index");
 
         for (uint256 i = gameIndex; i < len - 1; i++) {
@@ -337,32 +429,5 @@ contract Chaincity is Cities, ReentrancyGuard {
         }
         _games.pop();
         _totalGames--;
-    }
-
-    function _payout(address _playerAddr, uint256 _stakeReturn, uint256 _tokenReturn) internal {
-        // Check if the smart contract has enough allowance to transfer tokens on behalf of the sender
-        require(
-            token.allowance(wallet, address(this)) >= _tokenReturn,
-            "Insufficient allowance"
-        );
-
-    
-
-        // Transfer tokens from the sender to the recipient
-        require(
-            token.transferFrom(wallet, _playerAddr, _tokenReturn),
-            "Token transfer failed"
-        );
-
-        if (_stakeReturn > 0) {
-            wallet.transfer(_stakeReturn);
-        }
-    }
-
-    /**
-     * @dev Determines how game tokens is stored/forwarded on stakes/cashouts.
-     */
-    function _forwardFunds() internal {
-        token.transferFrom(wallet, msg.sender, msg.value);
     }
 }
